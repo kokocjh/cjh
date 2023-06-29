@@ -1,0 +1,170 @@
+import GamePoolMgr from "../../system/controller/GamePoolMgr";
+import UIPanelCtl from "../../system/controller/UIPanelCtl";
+import BaseDialog from "../../system/ui/dialog/BaseDialog";
+import BagItemCollisionNode from "../item/BagItemCollisionNode";
+import PropertiesItemNode from "../item/PropertiesItemNode";
+import PropertyMasterMgr, { PropertyPageType } from "../manager/PropertyMasterMgr";
+import UIImageMgr from "../manager/UIImageMgr";
+import UseItemDialog from "./UseItemDialog";
+
+const { ccclass, property } = cc._decorator;
+
+@ccclass
+export default class BagDialog extends BaseDialog {
+
+    @property(cc.Node)
+    prpoBtn: cc.Node;
+
+    @property(cc.Node)
+    materialsBtn: cc.Node;
+
+    @property(cc.Node)
+    fragmentBtn: cc.Node;
+
+    @property(cc.Node)
+    treasureBtn: cc.Node;
+
+    private _propertyMgr: PropertyMasterMgr;
+    private _gamePoolMgr: GamePoolMgr;
+    private _nullText: cc.Label;
+    private _propoScrollView: cc.ScrollView;
+    private _propoitemNodes = {};
+    private _mateitemNodes = {};
+    private _fragmentitemNodes = {};
+    private _treasureitemNodes = {};
+    private _lastoffsetY = 0;
+    private _bagType;
+
+    private prpoLabel: cc.Node;
+    private materialsLabel: cc.Node;
+    private fragmentLabel: cc.Node;
+    private treasureLabel: cc.Node;
+
+    private onColour = cc.color(186, 0, 0);
+    private unColour = cc.color(180, 132, 58);
+
+    protected onLoad(): void {
+        super.onLoad();
+        this._propertyMgr = PropertyMasterMgr.getInstance();
+        this._gamePoolMgr = GamePoolMgr.getInstance();
+        this._nullText = this.bg.getChildByName("nullText").getComponent(cc.Label)
+        this._propoScrollView = this.bg.getChildByName("propoScrollView").getComponent(cc.ScrollView)
+        this.prpoLabel = this.prpoBtn.getChildByName("Background").getChildByName("Label");
+        this.materialsLabel = this.materialsBtn.getChildByName("Background").getChildByName("Label");
+        this.fragmentLabel = this.fragmentBtn.getChildByName("Background").getChildByName("Label");
+        this.treasureLabel = this.treasureBtn.getChildByName("Background").getChildByName("Label");
+        this.prpoLabel.color = this.onColour;
+        this.materialsLabel.color = this.unColour;
+        this.fragmentLabel.color = this.unColour;
+        this.treasureLabel.color = this.unColour;
+    }
+    protected start(): void {
+        this.show(null);
+        this.registEvent()
+        this.updateView(PropertyPageType.GIFT_BAG);
+        this.setHideCallFunc(() => {
+            for(let i = 0; i < this._propoScrollView.content.childrenCount; i++){
+                let node = this._propoScrollView.content.children[i];
+                node.getComponent(BagItemCollisionNode).destroyNode();
+            }
+            this._propoScrollView.content.removeAllChildren(false);
+        });
+    }
+    registEvent() {
+        var self = this
+        this.prpoBtn.on('click', () => {
+            this.resetColor();
+            this.prpoLabel.color = this.onColour;
+            self.updateView(PropertyPageType.GIFT_BAG)
+        }, this);
+        this.materialsBtn.on('click', () => {
+            this.resetColor();
+            this.materialsLabel.color = this.onColour;
+            self.updateView(PropertyPageType.MATERIALS)
+        }, this);
+        this.fragmentBtn.on('click', () => {
+            this.resetColor();
+            this.fragmentLabel.color = this.onColour;
+            self.updateView(PropertyPageType.FRAGMENT)
+        }, this);
+        this.treasureBtn.on('click', () => {
+            this.resetColor();
+            this.treasureLabel.color = this.onColour;
+            self.updateView(PropertyPageType.TREASURE)
+        }, this);
+    }
+
+    resetColor() {
+        this.prpoLabel.color = this.unColour;
+        this.materialsLabel.color = this.unColour;
+        this.fragmentLabel.color = this.unColour;
+        this.treasureLabel.color = this.unColour;
+    }
+    private updateView(bagType) {
+        if(this._bagType == bagType) return;
+        this._bagType = bagType;
+        let bagList = this._propertyMgr.getBagItemList2(bagType);
+        this._nullText.node.active = bagList.length <= 0;
+        for(let i = 0; i < this._propoScrollView.content.childrenCount; i++){
+            let node = this._propoScrollView.content.children[i];
+            node.getComponent(BagItemCollisionNode).destroyNode();
+            node.destroy();
+        }
+        this._propoScrollView.content.removeAllChildren(true);
+        //创建ItemNode
+        for(let idx in bagList){
+            let itemData = bagList[idx];
+            let proItem:PropertiesItemNode;
+            let itemListNode = new cc.Node;
+            itemListNode.setContentSize(120, 170);
+            itemListNode.setParent(this._propoScrollView.content); 
+            let id = itemData["_id"]
+            
+            let isActive = false;
+            let nodeTbl = {
+                "id":id,
+                "updateItemNode":this.updateItemNode,
+                "bagList":itemData,
+                "bagType":bagType,
+                "proItem":proItem,
+                "isActive":isActive,
+                "this":this,
+            }
+            this._propoitemNodes[id] = nodeTbl;
+            itemListNode.addComponent(BagItemCollisionNode);
+            itemListNode.getComponent(BagItemCollisionNode).setItemData(this._propoitemNodes[id]);
+            cc.tween(this.node)
+            .delay(0.01)
+            .call(() => {
+                itemListNode.addComponent(cc.BoxCollider)
+                itemListNode.getComponent(cc.BoxCollider).size = cc.size(120, 170);
+                itemListNode.getComponent(cc.BoxCollider).offset = cc.v2(0, 0);
+            })
+            .start()
+        }
+    }
+    
+    private clickEvent(id) {
+        //检查是否可以使用
+        let self = this;
+        if (!PropertyMasterMgr.getInstance().checkItemIsUse(id)) return;
+        UIPanelCtl.getInstance().createDialogByDialogName("UseItemDialog", (node) => {
+            node.getComponent(UseItemDialog).setUseData(id, self.updateItemNode.bind(self, id));
+        });
+
+    }
+
+    public updateItemNode(id, bagType) {
+        let bagList = PropertyMasterMgr.getInstance().getBagItemList2(bagType);
+        this._nullText.node.active = bagList.length <= 0;
+        let itemNode: PropertiesItemNode = this._propoitemNodes[id].proItem;
+        let itemData = PropertyMasterMgr.getInstance().getPropertyById(id);
+        itemNode.updateCnt(itemData["_num"]);
+        if (itemData["_num"] <= 0) {
+            itemNode.node.destroy();
+            //从itemNodes中删除
+            delete this._propoitemNodes[id];
+
+        }
+    }
+}
